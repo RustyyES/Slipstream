@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urban Analytics | Cyberpunk Dashboard</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@400;600&display=swap"
+        rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            black: '#0a0a0f',
+                            dark: '#13131f',
+                            neon: '#00f3ff',
+                            pink: '#bc13fe',
+                            yellow: '#fcee0a'
+                        }
+                    },
+                    fontFamily: {
+                        display: ['Orbitron', 'sans-serif'],
+                        body: ['Rajdhani', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #0a0a0f;
+            color: #e2e8f0;
+        }
+
+        .glass-panel {
+            background: rgba(19, 19, 31, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 243, 255, 0.2);
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.1);
+        }
+
+        .text-neon {
+            color: #00f3ff;
+            text-shadow: 0 0 5px rgba(0, 243, 255, 0.5);
+        }
+
+        .text-cyber-pink {
+            color: #bc13fe;
+            text-shadow: 0 0 5px rgba(188, 19, 254, 0.5);
+        }
+
+        #map {
+            height: 600px;
+            width: 100%;
+            z-index: 1;
+        }
+    </style>
+</head>
+
+<body class="font-body min-h-screen p-4">
+
+    <!-- Header -->
+    <header class="flex justify-between items-center mb-6 glass-panel p-4 rounded-lg">
+        <div>
+            <h1 class="font-display text-3xl text-neon tracking-wider">URBAN <span class="text-white">NEXUS</span></h1>
+            <p class="text-xs text-cyber-pink tracking-[0.2em] uppercase">Real-time Mobility Analytics Platform</p>
+        </div>
+        <div class="flex gap-4">
+            <div class="text-right">
+                <p class="text-xs text-gray-400">STATUS</p>
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    <span class="font-bold text-green-400">SYSTEM ONLINE</span>
+                </div>
+            </div>
+            <div class="text-right">
+                <p class="text-xs text-gray-400">API LATENCY</p>
+                <p class="font-bold text-neon">12ms</p>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Grid -->
+    <div class="grid grid-cols-12 gap-6">
+
+        <!-- Left Stats Column -->
+        <div class="col-span-12 md:col-span-3 space-y-6">
+
+            <!-- Weather Widget -->
+            <div class="glass-panel p-6 rounded-lg relative overflow-hidden group">
+                <div class="absolute top-0 right-0 p-2 opacity-50 text-5xl">⛅</div>
+                <h3 class="font-display text-xl mb-4 text-white border-b border-gray-700 pb-2">Weather Ops</h3>
+                <div id="weather-container">
+                    <p class="text-gray-400 animate-pulse">Connecting to satellite...</p>
+                </div>
+            </div>
+
+            <!-- Traffic Stats -->
+            <div class="glass-panel p-6 rounded-lg">
+                <h3 class="font-display text-xl mb-4 text-white border-b border-gray-700 pb-2">Traffic Flow</h3>
+                <div class="space-y-4">
+                    <div>
+                        <p class="text-xs text-gray-400">AVG SPEED</p>
+                        <p class="text-2xl font-bold text-neon">42.5 <span class="text-sm">km/h</span></p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-400">CONGESTION LEVEL</p>
+                        <div class="w-full bg-gray-800 h-2 rounded-full mt-1">
+                            <div class="bg-cyber-pink h-2 rounded-full" style="width: 35%"></div>
+                        </div>
+                        <p class="text-right text-xs text-cyber-pink mt-1">LOW</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-400">ACTIVE VEHICLES</p>
+                        <p class="text-2xl font-bold text-white" id="vehicle-count">0</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Map -->
+        <div class="col-span-12 md:col-span-9">
+            <div class="glass-panel p-1 rounded-lg h-full">
+                <div id="map" class="rounded opacity-90 hover:opacity-100 transition-opacity duration-500"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        // Initialize Map
+        const map = L.map('map', {
+            preferCanvas: true // Force canvas for all vector layers if possible
+        }).setView([51.505, -0.09], 13);
+
+        // Cyberpunk/Dark Map Style
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        // Canvas Renderer for high-performance rendering of 15,000+ points
+        const myRenderer = L.canvas({ padding: 0.5 });
+
+        // Layer Group for easy management
+        const vehicleLayer = L.layerGroup().addTo(map);
+        const searchLayer = L.layerGroup().addTo(map);
+
+        async function fetchWeather() {
+            try {
+                const res = await fetch(`${API_BASE}/weather/summary`);
+                const data = await res.json();
+                if (data.length > 0) {
+                    const weather = data[0];
+                    document.getElementById('weather-container').innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-4xl font-bold text-neon">${Math.round(weather.avg_temp)}°C</p>
+                                <p class="text-sm text-gray-300">${weather.city}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm">Humidity: <span class="text-cyber-pink">${weather.avg_humidity}%</span></p>
+                                <p class="text-xs text-gray-500 mt-1">Last Update: ${new Date(weather.last_update).toLocaleTimeString()}</p>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error("Weather fetch failed", e);
+            }
+        }
+
+        async function fetchTraffic() {
+            try {
+                const res = await fetch(`${API_BASE}/traffic/live`);
+                const vehicles = await res.json();
+
+                document.getElementById('vehicle-count').innerText = vehicles.length.toLocaleString();
+
+                // Clear existing markers efficiently
+                vehicleLayer.clearLayers();
+
+                // Batch add markers to the canvas layer
+                vehicles.forEach(v => {
+                    if (v.latitude && v.longitude) {
+                        // CircleMarker is drawn on Canvas - extremely fast
+                        L.circleMarker([v.latitude, v.longitude], {
+                            renderer: myRenderer,
+                            radius: 3,
+                            fillColor: '#00f3ff',
+                            color: '#00f3ff',
+                            weight: 0,
+                            fillOpacity: 0.8
+                        })
+                            .bindPopup(`
+                            <div class="text-gray-800">
+                                <b>ID:</b> ${v.vehicle_id}<br>
+                                <b>Speed:</b> ${Math.round(v.speed)} km/h<br>
+                                <b>Route:</b> ${v.route_id}
+                            </div>
+                        `)
+                            .addTo(vehicleLayer);
+                    }
+                });
+
+            } catch (e) {
+                console.error("Traffic fetch failed", e);
+            }
+        }
+
+        // --- Geospatial Interaction (Right Click) ---
+        map.on('contextmenu', async function (e) {
+            const lat = e.latlng.lat;
+            const lon = e.latlng.lng;
+            const radiusKm = 5;
+
+            // Visual Feedback: Draw Search Radius
+            searchLayer.clearLayers();
+            L.circle([lat, lon], {
+                color: '#bc13fe',
+                fillColor: '#bc13fe',
+                fillOpacity: 0.2,
+                radius: radiusKm * 1000 // meters
+            }).addTo(searchLayer).bindPopup("Scanning Area...").openPopup();
+
+            // Call API
+            try {
+                const res = await fetch(`${API_BASE}/geospatial/nearby?lat=${lat}&lon=${lon}&radius_km=${radiusKm}`);
+                const vehicles = await res.json();
+
+                L.popup()
+                    .setLatLng(e.latlng)
+                    .setContent(`
+                        <div class="text-gray-900 min-w-[200px]">
+                            <h3 class="font-bold text-lg mb-2">📡 Sector Scan</h3>
+                            <p><b>Center:</b> ${lat.toFixed(4)}, ${lon.toFixed(4)}</p>
+                            <p><b>Radius:</b> ${radiusKm} km</p>
+                            <p class="mt-2 text-xl font-bold text-purple-600">${vehicles.length} Vehicles Found</p>
+                            <div class="mt-2 text-xs text-gray-500">Nearest: ${vehicles.length > 0 ? Math.round(vehicles[0].distance_meters) + 'm' : 'N/A'}</div>
+                        </div>
+                    `)
+                    .openOn(map);
+
+            } catch (err) {
+                console.error("Geo search failed", err);
+            }
+        });
+
+        // Initial Load
+        fetchWeather();
+        fetchTraffic();
+
+        // Polling
+        setInterval(fetchTraffic, 2000); // Live traffic every 2s
+        setInterval(fetchWeather, 60000); // Weather every 1m
+
+    </script>
+</body>
+
+</html>
