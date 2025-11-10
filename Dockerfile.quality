@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies once during build
+RUN pip install --no-cache-dir great_expectations sqlalchemy psycopg2-binary
+
+COPY src/quality/validate_weather.py /app/src/quality/
+
+# Helper script entrypoint
+CMD ["python", "src/quality/validate_weather.py"]
